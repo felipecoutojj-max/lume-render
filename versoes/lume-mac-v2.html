@@ -1,0 +1,901 @@
+<title>Lume Render</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: viewport à esquerda ocupando a tela, bancada de controles à direita (empilha no celular). Um só tema escuro, de propósito: render se julga sobre fundo neutro escuro. */
+:root{
+  --ground:#14130f; --panel:#1c1a16; --card:#232019; --line:#2e2b25;
+  --ink:#ece6da; --muted:#9a9284; --bronze:#c4884a; --bronze-ink:#1a1209;
+  --ok:#8fb07a; --warn:#d9a441;
+  --f-display:"Instrument Serif","Iowan Old Style",Georgia,serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+html,body{height:100%}
+[hidden]{display:none!important}
+body{background:var(--ground);color:var(--ink);font:14px/1.45 var(--f-body);overflow:hidden}
+.app{height:100%;display:grid;grid-template-columns:minmax(0,1fr) 340px;grid-template-rows:auto minmax(0,1fr)}
+.bar{grid-column:1/-1;display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));border-bottom:1px solid var(--line)}
+.mark{font:400 28px/1 var(--f-display);letter-spacing:.01em}
+.mark i{color:var(--bronze)}
+.file{display:flex;flex-direction:column;min-width:0;flex:1}
+.file b{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file span{font:12px var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+button,select,input{font:inherit;color:inherit}
+.btn{background:transparent;border:1px solid var(--line);border-radius:6px;padding:8px 12px;cursor:pointer;transition:border-color .15s,background .15s}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--bronze);border-color:var(--bronze);color:var(--bronze-ink);font-weight:600}
+.btn.primary:hover{background:#d39859}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.small{padding:6px 10px;font-size:13px}
+:focus-visible{outline:2px solid var(--bronze);outline-offset:2px}
+
+.stage{position:relative;min-width:0;min-height:0;overflow:hidden;background:#111}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.hint{position:absolute;left:16px;bottom:14px;right:16px;font:12px var(--f-mono);color:rgba(236,230,218,.6);pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.7)}
+.drop{position:absolute;inset:12px;border:2px dashed var(--bronze);border-radius:10px;display:grid;place-items:center;background:rgba(20,19,15,.6);font:400 30px var(--f-display);color:var(--ink)}
+.busy{position:absolute;inset:0;display:grid;place-items:center;background:rgba(20,19,15,.72);text-align:center;padding:16px}
+.busy p{font:400 26px var(--f-display);margin:0}
+.busy small{display:block;color:var(--muted);margin-top:6px;font-variant-numeric:tabular-nums}
+
+.panel{background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding-block:4px 24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+details.sec{border-bottom:1px solid var(--line)}
+details.sec:last-child{border-bottom:0}
+details.sec>summary{list-style:none;cursor:pointer;padding-block:14px;display:flex;justify-content:space-between;align-items:center;font:500 11px var(--f-body);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+details.sec>summary::-webkit-details-marker{display:none}
+details.sec>summary::after{content:"+";font:400 16px var(--f-mono);letter-spacing:0}
+details.sec[open]>summary::after{content:"–"}
+.body{display:grid;gap:12px;padding-bottom:16px}
+.flat{padding-bottom:0}
+.sub{font:500 11px var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:4px 0 -4px}
+.swatches{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.sw{background:none;border:0;padding:0;cursor:pointer;display:grid;gap:3px;justify-items:center;align-content:start;color:var(--muted);font-size:10.5px;line-height:1.2;text-align:center}
+.sw img{width:100%;max-width:52px;aspect-ratio:1;border-radius:50%;border:2px solid transparent;transition:border-color .15s;background:#22201b}
+.sw[aria-pressed="true"] img{border-color:var(--bronze)}
+.sw[aria-pressed="true"]{color:var(--ink)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.val{font:12px var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.rng{display:grid;gap:2px}
+.rng .row label{font-size:13px}
+input[type=range]{width:100%;accent-color:var(--bronze);margin:0}
+input[type=checkbox]{accent-color:var(--bronze);width:16px;height:16px;margin:0}
+.check{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13.5px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:5px 10px;cursor:pointer;font-size:12.5px}
+.chip[aria-pressed="true"]{border-color:var(--bronze);color:var(--bronze)}
+.bgchip{display:flex;align-items:center;gap:6px}
+.bgchip i{width:14px;height:14px;border-radius:50%;display:inline-block;border:1px solid rgba(255,255,255,.15)}
+.colors{display:flex;gap:12px;flex-wrap:wrap}
+.colors label{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)}
+input[type=color]{width:30px;height:24px;border:1px solid var(--line);border-radius:4px;background:none;padding:0;cursor:pointer}
+select{background:var(--ground);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.note{font-size:12px;color:var(--muted);margin:0}
+.status{font:12px var(--f-mono);color:var(--muted);min-height:1.4em;margin:0}
+.status.ok{color:var(--ok)} .status.warn{color:var(--warn)}
+.sample-tag{display:inline-block;font:11px var(--f-mono);color:var(--bronze);border:1px solid rgba(196,136,74,.45);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:1px}
+.lights{display:grid;gap:10px}
+.light{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;display:grid;gap:8px}
+.lhead{display:flex;align-items:center;gap:8px}
+.lhead b{flex:1;font-weight:500;font-size:13.5px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lhead select{width:auto;padding:4px 6px;font-size:12.5px}
+.x{background:none;border:0;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:2px 4px}
+.x:hover{color:var(--ink)}
+
+@media (max-width:820px){
+  body{overflow:auto}
+  .app{height:auto;grid-template-columns:minmax(0,1fr);grid-template-rows:auto 62vh auto}
+  .panel{border-left:0;border-top:1px solid var(--line);overflow:visible}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app">
+  <header class="bar">
+    <div class="mark">Lu<i>m</i>e</div>
+    <div class="file">
+      <b id="fileName">Estudo orgânico <span class="sample-tag">exemplo</span></b>
+      <span id="stats">—</span>
+    </div>
+    <input id="fileInput" type="file" accept=".obj,.ply,.stl" hidden>
+    <button class="btn primary" id="openBtn">Abrir escultura</button>
+  </header>
+
+  <main class="stage" id="stage">
+    <canvas id="gl"></canvas>
+    <div class="hint" id="hint">Arraste para girar · role para aproximar · botão direito move · solte um OBJ, PLY ou STL aqui</div>
+    <div class="drop" id="drop" hidden>Solte para abrir</div>
+    <div class="busy" id="busy" hidden><div><p id="busyMsg">Lendo arquivo…</p><small id="busySub"></small></div></div>
+  </main>
+
+  <aside class="panel" aria-label="Controles de render">
+    <details class="sec" open>
+      <summary>Material</summary>
+      <div class="body">
+        <div class="chips" id="matMode">
+          <button class="chip" data-mode="pbr" aria-pressed="true">Realista</button>
+          <button class="chip" data-mode="matcap" aria-pressed="false">Estilo ZBrush</button>
+        </div>
+        <div class="body flat" id="swPbr"></div>
+        <div class="swatches" id="swMatcap" hidden></div>
+        <div id="matAdjust" class="body flat">
+          <div class="sub">Ajustar o material</div>
+          <div class="colors"><label>Cor <input type="color" id="mColor"></label></div>
+          <div class="rng"><div class="row"><label for="mRough">Rugosidade</label><span class="val" id="mRoughv"></span></div><input type="range" id="mRough" min="0.02" max="1" step="0.01"></div>
+          <div class="rng"><div class="row"><label for="mMetal">Metal</label><span class="val" id="mMetalv"></span></div><input type="range" id="mMetal" min="0" max="1" step="0.01"></div>
+          <div class="rng"><div class="row"><label for="mCoat">Verniz</label><span class="val" id="mCoatv"></span></div><input type="range" id="mCoat" min="0" max="1" step="0.01"></div>
+          <div class="sub">Superfície real</div>
+          <div class="rng"><div class="row"><label for="mBump">Microtextura</label><span class="val" id="mBumpv"></span></div><input type="range" id="mBump" min="0" max="1" step="0.01"></div>
+          <div class="rng"><div class="row"><label for="mVar">Variação de cor</label><span class="val" id="mVarv"></span></div><input type="range" id="mVar" min="0" max="1" step="0.01"></div>
+          <div class="rng"><div class="row"><label for="mFreq">Tamanho do grão</label><span class="val" id="mFreqv"></span></div><input type="range" id="mFreq" min="0" max="1" step="0.01"></div>
+        </div>
+        <label class="check" id="ppWrap" hidden><input type="checkbox" id="pp"> Usar polypaint (cores do ZBrush)</label>
+      </div>
+    </details>
+
+    <details class="sec" open>
+      <summary>Luzes</summary>
+      <div class="body">
+        <div class="chips" id="rigs"></div>
+        <div class="rng"><div class="row"><label for="rigRot">Girar todas as luzes</label><span class="val" id="rigRotv"></span></div><input type="range" id="rigRot" min="-180" max="180" step="1" value="0"></div>
+        <div class="rng"><div class="row"><label for="envI">Reflexos do ambiente</label><span class="val" id="envIv"></span></div><input type="range" id="envI" min="0" max="1.5" step="0.01" value="0.5"></div>
+        <div class="lights" id="lights"></div>
+        <div class="row">
+          <button class="btn small" id="addLight">+ Adicionar ponto de luz</button>
+          <label class="check"><input type="checkbox" id="showL" checked> Ver luzes</label>
+        </div>
+      </div>
+    </details>
+
+    <details class="sec" open>
+      <summary>Acabamento fotográfico</summary>
+      <div class="body">
+        <div class="chips" id="looks"></div>
+        <div class="rng"><div class="row"><label for="fExp">Exposição</label><span class="val" id="fExpv"></span></div><input type="range" id="fExp" min="0.3" max="2.5" step="0.01"></div>
+        <div class="rng"><div class="row"><label for="fCon">Contraste</label><span class="val" id="fConv"></span></div><input type="range" id="fCon" min="0.7" max="1.5" step="0.01"></div>
+        <div class="rng"><div class="row"><label for="fSat">Saturação</label><span class="val" id="fSatv"></span></div><input type="range" id="fSat" min="0" max="1.6" step="0.01"></div>
+        <div class="rng"><div class="row"><label for="fWarm">Temperatura</label><span class="val" id="fWarmv"></span></div><input type="range" id="fWarm" min="-1" max="1" step="0.01"></div>
+        <div class="rng"><div class="row"><label for="fBloom">Brilho nos reflexos</label><span class="val" id="fBloomv"></span></div><input type="range" id="fBloom" min="0" max="1" step="0.01"></div>
+        <div class="rng"><div class="row"><label for="fVig">Vinheta</label><span class="val" id="fVigv"></span></div><input type="range" id="fVig" min="0" max="1" step="0.01"></div>
+        <div class="rng"><div class="row"><label for="fGrain">Granulação de filme</label><span class="val" id="fGrainv"></span></div><input type="range" id="fGrain" min="0" max="1" step="0.01"></div>
+        <label class="check"><input type="checkbox" id="aoOn" checked> Oclusão de ambiente</label>
+        <div class="rng"><div class="row"><label for="aoR">Profundidade das cavidades</label><span class="val" id="aoRv"></span></div><input type="range" id="aoR" min="0.02" max="0.4" step="0.01" value="0.12"></div>
+        <label class="check"><input type="checkbox" id="dofOn"> Profundidade de campo (foco)</label>
+        <div class="rng"><div class="row"><label for="dofA">Desfoque do fundo</label><span class="val" id="dofAv"></span></div><input type="range" id="dofA" min="0" max="1" step="0.01" value="0.35"></div>
+      </div>
+    </details>
+
+    <details class="sec">
+      <summary>Chão e fundo</summary>
+      <div class="body">
+        <label class="check"><input type="checkbox" id="shOn" checked> Sombra no chão</label>
+        <div class="rng"><div class="row"><label for="shA">Força da sombra</label><span class="val" id="shAv"></span></div><input type="range" id="shA" min="0" max="0.95" step="0.01" value="0.55"></div>
+        <div class="chips" id="bgPresets"></div>
+        <div class="colors">
+          <label>Topo <input type="color" id="bgTop" value="#3b3a37"></label>
+          <label>Base <input type="color" id="bgBot" value="#111111"></label>
+        </div>
+      </div>
+    </details>
+
+    <details class="sec">
+      <summary>Câmera</summary>
+      <div class="body">
+        <div class="chips" id="views">
+          <button class="chip" data-az="0">Frente</button>
+          <button class="chip" data-az="35">Três quartos</button>
+          <button class="chip" data-az="90">Perfil</button>
+          <button class="chip" data-az="180">Costas</button>
+        </div>
+        <div class="rng"><div class="row"><label for="fov">Lente</label><span class="val" id="fovv"></span></div><input type="range" id="fov" min="8" max="60" step="1" value="24"></div>
+        <label class="check"><input type="checkbox" id="spin"> Girar no pedestal</label>
+      </div>
+    </details>
+
+    <details class="sec" open>
+      <summary>Exportar</summary>
+      <div class="body">
+        <div>
+          <label for="fmt" class="note">Formato</label>
+          <select id="fmt">
+            <option value="screen">Do tamanho da tela (2×)</option>
+            <option value="1920x1080">16:9 · Full HD 1920×1080</option>
+            <option value="3840x2160" selected>16:9 · 4K 3840×2160</option>
+            <option value="2160x2160">1:1 · 2160×2160</option>
+            <option value="1080x1350">4:5 · Feed 1080×1350</option>
+            <option value="1080x1920">9:16 · Stories 1080×1920</option>
+          </select>
+        </div>
+        <label class="check"><input type="checkbox" id="transp"> Fundo transparente (só PNG)</label>
+        <button class="btn primary" id="pngBtn">Salvar imagem PNG</button>
+        <div class="split">
+          <div>
+            <label for="dur" class="note">Volta completa</label>
+            <select id="dur"><option value="6">6 s</option><option value="10" selected>10 s</option><option value="16">16 s</option></select>
+          </div>
+          <div>
+            <label for="vres" class="note">Vídeo</label>
+            <select id="vres"><option value="1920x1080">16:9 1080p</option><option value="1080x1080">1:1 1080</option><option value="1080x1920">9:16 1080</option></select>
+          </div>
+        </div>
+        <button class="btn" id="vidBtn">Gravar giro 360°</button>
+        <p class="status" id="status"></p>
+      </div>
+    </details>
+  </aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PLYLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/math/SimplexNoise.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/environments/RoomEnvironment.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/SSAOShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/BokehShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/SSAOPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/BokehPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const stage = $('stage'), canvas = $('gl');
+const nf = new Intl.NumberFormat('pt-BR');
+const lin = hex => new THREE.Color(hex).convertSRGBToLinear();
+
+/* ================= Materiais realistas (PBR) ================= */
+const PBR = [
+  {g:'Metais', id:'bronze', nome:'Bronze', color:'#9c6a3c', rough:.38, metal:1, coat:0, bump:.22, vari:.35, freq:.45},
+  {g:'Metais', id:'patina', nome:'Bronze escuro', color:'#5f432a', rough:.52, metal:.85, coat:0, bump:.35, vari:.55, freq:.4},
+  {g:'Metais', id:'verdete', nome:'Pátina verde', color:'#5f8c78', rough:.7, metal:.25, coat:0, bump:.5, vari:.75, freq:.35},
+  {g:'Metais', id:'cobre', nome:'Cobre', color:'#d0805a', rough:.28, metal:1, coat:0, bump:.12, vari:.25, freq:.5},
+  {g:'Metais', id:'ouro', nome:'Ouro', color:'#e3b05c', rough:.2, metal:1, coat:0, bump:.08, vari:.1, freq:.5},
+  {g:'Metais', id:'prata', nome:'Prata', color:'#d6d6d8', rough:.18, metal:1, coat:0, bump:.06, vari:.08, freq:.5},
+  {g:'Metais', id:'aluminio', nome:'Alumínio', color:'#b9bcc1', rough:.42, metal:1, coat:0, bump:.15, vari:.12, freq:.85},
+  {g:'Metais', id:'ferro', nome:'Ferro fundido', color:'#4a4846', rough:.68, metal:.9, coat:0, bump:.6, vari:.4, freq:.6},
+  {g:'Metais', id:'cromo', nome:'Cromo', color:'#f2f2f2', rough:.04, metal:1, coat:0, bump:0, vari:0, freq:.5},
+  {g:'Metais', id:'ferrugem', nome:'Ferrugem', color:'#7a3e22', rough:.9, metal:.3, coat:0, bump:.8, vari:.8, freq:.5},
+  {g:'Pedras', id:'marmore', nome:'Mármore', color:'#eeece6', rough:.24, metal:0, coat:.55, bump:.04, vari:.18, freq:.25},
+  {g:'Pedras', id:'marmoreN', nome:'Mármore negro', color:'#1d1c1c', rough:.18, metal:0, coat:.8, bump:.03, vari:.35, freq:.2},
+  {g:'Pedras', id:'granito', nome:'Granito', color:'#7d7a76', rough:.55, metal:0, coat:.2, bump:.3, vari:1, freq:.9},
+  {g:'Pedras', id:'pedra', nome:'Pedra-sabão', color:'#8e877d', rough:.95, metal:0, coat:0, bump:.85, vari:.6, freq:.55},
+  {g:'Pedras', id:'arenito', nome:'Arenito', color:'#c09a6f', rough:.95, metal:0, coat:0, bump:.7, vari:.5, freq:.95},
+  {g:'Pedras', id:'obsidiana', nome:'Obsidiana', color:'#16161a', rough:.06, metal:0, coat:1, bump:.02, vari:.05, freq:.4},
+  {g:'Pedras', id:'jade', nome:'Jade', color:'#4f8d68', rough:.22, metal:0, coat:.9, bump:.03, vari:.45, freq:.2},
+  {g:'Pedras', id:'concreto', nome:'Concreto', color:'#9b9893', rough:.9, metal:0, coat:0, bump:.65, vari:.4, freq:.9},
+  {g:'Moldagem', id:'gesso', nome:'Gesso', color:'#ebe7de', rough:.92, metal:0, coat:0, bump:.3, vari:.06, freq:.75},
+  {g:'Moldagem', id:'argila', nome:'Argila', color:'#a87a57', rough:.82, metal:0, coat:0, bump:.45, vari:.22, freq:.6},
+  {g:'Moldagem', id:'terracota', nome:'Terracota', color:'#b4603c', rough:.85, metal:0, coat:0, bump:.5, vari:.35, freq:.65},
+  {g:'Moldagem', id:'ceramica', nome:'Porcelana', color:'#f4f2ec', rough:.3, metal:0, coat:1, bump:.02, vari:.02, freq:.5},
+  {g:'Moldagem', id:'esmalte', nome:'Cerâmica azul', color:'#2d5a8a', rough:.28, metal:0, coat:1, bump:.06, vari:.35, freq:.3},
+  {g:'Moldagem', id:'cera', nome:'Cera de abelha', color:'#d9a441', rough:.45, metal:0, coat:.3, bump:.1, vari:.25, freq:.4},
+  {g:'Moldagem', id:'resina', nome:'Resina 3D', color:'#9a9ca0', rough:.42, metal:0, coat:.25, bump:.06, vari:.03, freq:.8},
+  {g:'Moldagem', id:'vinil', nome:'Vinil (toy)', color:'#e8e3d8', rough:.48, metal:0, coat:.15, bump:.02, vari:.02, freq:.5},
+  {g:'Moldagem', id:'vinilP', nome:'Vinil preto', color:'#1e1e20', rough:.38, metal:0, coat:.3, bump:.02, vari:.02, freq:.5},
+  {g:'Moldagem', id:'madeira', nome:'Madeira', color:'#8a5a34', rough:.6, metal:0, coat:.35, bump:.25, vari:.7, freq:.3},
+];
+const freqOf = v => 6 + v*60;
+const NOISE_GLSL = `
+uniform mat3 uNM; uniform float uObjScale; uniform float uFreq; uniform float uBump; uniform float uVar;
+varying vec3 vOPos;
+float tgHash(vec3 p){ p = fract(p*0.3183099 + 0.1); p *= 17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+float tgNoise(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f*f*(3.0-2.0*f);
+  return mix(mix(mix(tgHash(i),tgHash(i+vec3(1.,0.,0.)),f.x), mix(tgHash(i+vec3(0.,1.,0.)),tgHash(i+vec3(1.,1.,0.)),f.x),f.y),
+             mix(mix(tgHash(i+vec3(0.,0.,1.)),tgHash(i+vec3(1.,0.,1.)),f.x), mix(tgHash(i+vec3(0.,1.,1.)),tgHash(i+vec3(1.,1.,1.)),f.x),f.y), f.z); }
+float tgFbm(vec3 p){ float a = 0.5, s = 0.0; for (int i = 0; i < 3; i++) { s += a*tgNoise(p); p = p*2.03 + 1.7; a *= 0.5; } return s/0.875; }
+`;
+function makePbr(p){
+  const m = new THREE.MeshPhysicalMaterial({color:lin(p.color), roughness:p.rough, metalness:p.metal, clearcoat:p.coat, clearcoatRoughness:.08, envMapIntensity:.5});
+  const u = {uNM:{value:new THREE.Matrix3()}, uObjScale:{value:1}, uFreq:{value:freqOf(p.freq)}, uBump:{value:p.bump}, uVar:{value:p.vari}};
+  m.userData.u = u;
+  m.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, u);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vOPos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvOPos = transformed;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\n' + NOISE_GLSL)
+      .replace('#include <color_fragment>', '#include <color_fragment>\nvec3 tgP = vOPos*uObjScale*uFreq; float tgN = tgFbm(tgP);\ndiffuseColor.rgb *= 1.0 + (tgN - 0.5)*uVar*1.3;')
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor + (tgN - 0.5)*uVar*0.5, 0.03, 1.0);')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+      { float e = 0.07; vec3 g = (vec3(tgFbm(tgP+vec3(e,0.,0.)), tgFbm(tgP+vec3(0.,e,0.)), tgFbm(tgP+vec3(0.,0.,e))) - tgN)/e;
+        vec3 gv = uNM*g; gv -= dot(gv, normal)*normal; normal = normalize(normal - uBump*0.09*gv); }`);
+  };
+  return m;
+}
+
+/* ================= MatCaps (estilo ZBrush) ================= */
+const norm = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0]/l, v[1]/l, v[2]/l]; };
+const dot = (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+const KEY = norm([-0.45, 0.65, 0.62]), FILL = norm([0.75, -0.1, 0.65]);
+const MATCAPS = [
+  {id:'ceraV', nome:'Cera vermelha', c:[.62,.16,.10], amb:.10, w:.45, k1:.95, k2:.22, spec:.32, shin:28, sc:[1,.85,.8], rim:.28, rc:[1,.45,.35], sss:[.45,.07,.03], sa:.45},
+  {id:'cinza', nome:'Cera cinza', c:[.60,.60,.62], amb:.12, w:.35, k1:.9, k2:.25, spec:.30, shin:40, sc:[1,1,1], rim:.30, rc:[.78,.84,1], sss:[0,0,0], sa:0},
+  {id:'argilaZ', nome:'Argila', c:[.64,.50,.39], amb:.13, w:.30, k1:.92, k2:.28, spec:.07, shin:10, sc:[1,.9,.8], rim:.16, rc:[1,.85,.7], sss:[.15,.06,.02], sa:.15},
+  {id:'gessoZ', nome:'Gesso', c:[.88,.86,.82], amb:.20, w:.50, k1:.85, k2:.30, spec:.04, shin:8, sc:[1,1,1], rim:.10, rc:[1,1,1], sss:[0,0,0], sa:0},
+  {id:'peleZ', nome:'Pele', c:[.76,.50,.40], amb:.12, w:.60, k1:.90, k2:.26, spec:.14, shin:24, sc:[1,.9,.85], rim:.22, rc:[1,.7,.6], sss:[.6,.15,.08], sa:.45},
+];
+function makeMatcap(p, size){
+  const cv = document.createElement('canvas'); cv.width = cv.height = size;
+  const ctx = cv.getContext('2d'); const img = ctx.createImageData(size, size); const d = img.data;
+  for (let py = 0; py < size; py++) for (let px = 0; px < size; px++) {
+    let x = (px + .5)/size*2 - 1, y = -((py + .5)/size*2 - 1);
+    const r2 = x*x + y*y; if (r2 > .998) { const r = Math.sqrt(r2)/.999; x /= r; y /= r; }
+    const z = Math.sqrt(Math.max(0, 1 - x*x - y*y)); const n = [x, y, z];
+    const d1 = Math.max(0, (dot(n, KEY) + p.w)/(1 + p.w)), d2 = Math.max(0, (dot(n, FILL) + p.w)/(1 + p.w));
+    const lit = p.amb + d1*p.k1 + d2*p.k2;
+    const h = norm([KEY[0], KEY[1], KEY[2] + 1]);
+    const s = Math.pow(Math.max(0, dot(n, h)), p.shin)*p.spec, rim = Math.pow(1 - z, 2.4)*p.rim, sss = Math.pow(1 - z, 1.4)*p.sa*(0.4 + 0.6*d1);
+    const o = (py*size + px)*4;
+    for (let k = 0; k < 3; k++) { let v = p.c[k]*lit + s*p.sc[k] + rim*p.rc[k] + sss*p.sss[k]; v = v/(1 + v*.12); d[o + k] = Math.max(0, Math.min(255, Math.round(Math.min(1, v)*255))); }
+    d[o + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0); return cv;
+}
+
+/* ================= Renderer e cena ================= */
+const renderer = new THREE.WebGLRenderer({canvas, antialias:false, alpha:true, preserveDrawingBuffer:true});
+renderer.setClearColor(0x000000, 0);
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const maxTex = renderer.capabilities.maxTextureSize;
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
+
+const bgCanvas = document.createElement('canvas'); bgCanvas.width = 4; bgCanvas.height = 512;
+const bgTex = new THREE.CanvasTexture(bgCanvas); bgTex.encoding = THREE.sRGBEncoding;
+scene.background = bgTex;
+
+const camera = new THREE.PerspectiveCamera(24, 1, 0.05, 30);
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.enableDamping = true; controls.dampingFactor = 0.08; controls.screenSpacePanning = true;
+
+const pivot = new THREE.Group(); scene.add(pivot);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({opacity:.55}));
+ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
+const helpers = new THREE.Group(); scene.add(helpers);
+const center = new THREE.Object3D(); scene.add(center);
+
+const pbrMat = makePbr(PBR[0]);
+const matcapTex = {};
+const matcapMat = new THREE.MeshMatcapMaterial();
+
+/* ---------- pós-processamento ---------- */
+const GradeShader = {
+  uniforms: {tDiffuse:{value:null}, uExp:{value:1}, uCon:{value:1}, uSat:{value:1}, uWarm:{value:0}, uVig:{value:.35}, uGrain:{value:.25}, uTime:{value:0}, uRes:{value:new THREE.Vector2(1, 1)}, uACES:{value:1}},
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float uExp, uCon, uSat, uWarm, uVig, uGrain, uTime, uACES; uniform vec2 uRes; varying vec2 vUv;
+    vec3 aces(vec3 x){ return clamp((x*(2.51*x + 0.03))/(x*(2.43*x + 0.59) + 0.14), 0.0, 1.0); }
+    vec3 toSRGB(vec3 c){ return mix(c*12.92, 1.055*pow(c, vec3(1.0/2.4)) - 0.055, step(0.0031308, c)); }
+    float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233)))*43758.5453); }
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      vec3 col = c.rgb*uExp;
+      col *= vec3(1.0 + uWarm*0.09, 1.0 + uWarm*0.01, 1.0 - uWarm*0.10);
+      col = uACES > 0.5 ? aces(col*0.9) : clamp(col, 0.0, 1.0);
+      col = toSRGB(col);
+      float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      col = mix(vec3(l), col, uSat);
+      col = (col - 0.5)*uCon + 0.5;
+      vec2 d = (vUv - vec2(0.5, 0.47))*vec2(uRes.x/uRes.y, 1.0);
+      float v = 1.0 - smoothstep(0.35, 1.05, length(d)*1.15);
+      col *= mix(1.0, v, uVig);
+      float n = h(vUv*uRes + fract(uTime)*91.7) + h(vUv*uRes*1.37 - fract(uTime*1.3)*53.1) - 1.0;
+      col += n*uGrain*0.055*(1.0 - l*0.5);
+      gl_FragColor = vec4(clamp(col, 0.0, 1.0), c.a);
+    }`
+};
+const rt = new THREE.WebGLRenderTarget(512, 512, {minFilter:THREE.LinearFilter, magFilter:THREE.LinearFilter, format:THREE.RGBAFormat, type:THREE.HalfFloatType});
+const composer = new THREE.EffectComposer(renderer, rt);
+const renderPass = new THREE.RenderPass(scene, camera);
+const ssao = new THREE.SSAOPass(scene, camera, 512, 512);
+ssao.beautyRenderTarget.texture.type = THREE.HalfFloatType;
+ssao.kernelRadius = .12; ssao.minDistance = .0002; ssao.maxDistance = .012;
+{ const orig = ssao.renderOverride.bind(ssao); ssao.renderOverride = (...a) => { const bg = scene.background; scene.background = null; orig(...a); scene.background = bg; }; }
+const bokeh = new THREE.BokehPass(scene, camera, {focus:5, aperture:.004, maxblur:.012, width:512, height:512});
+{ const orig = bokeh.render.bind(bokeh); bokeh.render = (...a) => { const bg = scene.background; scene.background = null; helpers.visible = false; orig(...a); scene.background = bg; helpers.visible = st.showL && !st.exporting; }; }
+const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(512, 512), .2, .5, .95);
+const grade = new THREE.ShaderPass(GradeShader);
+[renderPass, ssao, bokeh, bloom, grade].forEach(p => composer.addPass(p));
+
+const st = {mode:'pbr', mat:'bronze', matcap:'ceraV', ao:true, dof:false, sh:true, spin:false, recording:false, exporting:false,
+  height:2, hasColor:false, bgTop:'#3b3a37', bgBot:'#111111', showL:true, rigRot:0, dofA:.35};
+let model = null;
+
+/* ================= Luzes ================= */
+let lights = [], lightSeq = 0;
+const RIGS = {
+  tres: {nome:'Três pontos', env:.5, L:[
+    {nome:'Principal', tipo:'sol', cor:'#fff1df', int:2.6, az:40, el:42, dist:5, sombra:true},
+    {nome:'Preenchimento', tipo:'ponto', cor:'#d9e3ff', int:.7, az:-65, el:12, dist:5, sombra:false},
+    {nome:'Contraluz', tipo:'sol', cor:'#ffffff', int:2.2, az:165, el:38, dist:5, sombra:false}]},
+  janela: {nome:'Janela lateral', env:.35, L:[
+    {nome:'Janela', tipo:'sol', cor:'#eef3ff', int:3.4, az:88, el:22, dist:5, sombra:true},
+    {nome:'Rebatedor', tipo:'ponto', cor:'#fff4e6', int:.35, az:-95, el:8, dist:4, sombra:false}]},
+  museu: {nome:'Museu', env:.22, L:[
+    {nome:'Spot do teto', tipo:'spot', cor:'#ffe6c2', int:5, az:18, el:68, dist:5, sombra:true},
+    {nome:'Ambiente', tipo:'ponto', cor:'#ffffff', int:.35, az:-130, el:25, dist:6, sombra:false}]},
+  drama: {nome:'Dramático', env:.12, L:[
+    {nome:'Frontal fraca', tipo:'sol', cor:'#ffffff', int:.9, az:-30, el:18, dist:5, sombra:false},
+    {nome:'Contraluz quente', tipo:'sol', cor:'#ffcf96', int:4.2, az:150, el:26, dist:5, sombra:true},
+    {nome:'Contraluz fria', tipo:'sol', cor:'#9fc2ff', int:2.8, az:-155, el:24, dist:5, sombra:false}]},
+};
+const TIPOS = {sol:'Sol', ponto:'Ponto', spot:'Spot'};
+function makeLightObj(L){
+  if (L.obj) { scene.remove(L.obj); L.obj.dispose && L.obj.dispose(); }
+  let o;
+  if (L.tipo === 'sol') {
+    o = new THREE.DirectionalLight(); o.target = center;
+    o.shadow.mapSize.set(2048, 2048); Object.assign(o.shadow.camera, {left:-2.4, right:2.4, top:2.4, bottom:-2.4, near:.1, far:16});
+    o.shadow.bias = -0.0004; o.shadow.normalBias = 0.025;
+  } else if (L.tipo === 'ponto') {
+    o = new THREE.PointLight(0xffffff, 1, 0, 2); o.shadow.mapSize.set(1024, 1024); o.shadow.camera.near = .1; o.shadow.camera.far = 20; o.shadow.bias = -0.002; o.shadow.normalBias = .03;
+  } else {
+    o = new THREE.SpotLight(0xffffff, 1, 0, 26*Math.PI/180, .7, 2); o.target = center;
+    o.shadow.mapSize.set(2048, 2048); o.shadow.camera.near = .2; o.shadow.camera.far = 20; o.shadow.bias = -0.0006; o.shadow.normalBias = .025;
+  }
+  L.obj = o; scene.add(o);
+  if (!L.helper) { L.helper = new THREE.Mesh(new THREE.SphereGeometry(.05, 16, 12), new THREE.MeshBasicMaterial({toneMapped:false})); helpers.add(L.helper); }
+}
+function updateLight(L){
+  const o = L.obj, a = (L.az + st.rigRot)*Math.PI/180, e = L.el*Math.PI/180;
+  const dist = L.tipo === 'sol' ? 7 : L.dist;
+  o.position.set(Math.sin(a)*Math.cos(e)*dist, center.position.y + Math.sin(e)*dist, Math.cos(a)*Math.cos(e)*dist);
+  o.color.copy(lin(L.cor));
+  const near = L.tipo === 'sol' ? 1 : (L.dist/4)*(L.dist/4);
+  o.intensity = L.int*near;
+  o.castShadow = !!L.sombra;
+  const hd = L.tipo === 'sol' ? 3.2 : L.dist;
+  L.helper.position.set(Math.sin(a)*Math.cos(e)*hd, center.position.y + Math.sin(e)*hd, Math.cos(a)*Math.cos(e)*hd);
+  L.helper.material.color.set(L.cor);
+}
+function addLight(def){ const L = Object.assign({id:++lightSeq}, def); makeLightObj(L); updateLight(L); lights.push(L); return L; }
+function dropLight(L){ scene.remove(L.obj); L.obj.dispose && L.obj.dispose(); helpers.remove(L.helper); L.helper.geometry.dispose(); L.helper.material.dispose(); }
+function removeLight(L){ dropLight(L); lights = lights.filter(x => x !== L); renderLightCards(); }
+function applyRig(key){
+  lights.forEach(dropLight); lights = [];
+  const r = RIGS[key]; r.L.forEach(addLight);
+  $('envI').value = r.env; $('envI').dispatchEvent(new Event('input'));
+  $('rigs').querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.k === key)));
+  renderLightCards();
+}
+function rangeEl(L, key, label, min, max, step, fmt){
+  const w = document.createElement('div'); w.className = 'rng';
+  const id = `l${L.id}-${key}`;
+  w.innerHTML = `<div class="row"><label for="${id}">${label}</label><span class="val"></span></div><input type="range" id="${id}" min="${min}" max="${max}" step="${step}">`;
+  const inp = w.querySelector('input'), out = w.querySelector('.val');
+  inp.value = L[key]; out.textContent = fmt(L[key]);
+  inp.addEventListener('input', () => { L[key] = +inp.value; out.textContent = fmt(L[key]); updateLight(L); });
+  return w;
+}
+function renderLightCards(){
+  const box = $('lights'); box.innerHTML = '';
+  lights.forEach(L => {
+    const card = document.createElement('div'); card.className = 'light';
+    const head = document.createElement('div'); head.className = 'lhead';
+    const col = document.createElement('input'); col.type = 'color'; col.value = L.cor; col.id = `l${L.id}-cor`; col.title = 'Cor da luz';
+    col.addEventListener('input', () => { L.cor = col.value; updateLight(L); });
+    const nm = document.createElement('b'); nm.textContent = L.nome;
+    const sel = document.createElement('select'); sel.id = `l${L.id}-tipo`; sel.setAttribute('aria-label', 'Tipo de luz');
+    for (const k in TIPOS) { const op = document.createElement('option'); op.value = k; op.textContent = TIPOS[k]; sel.append(op); }
+    sel.value = L.tipo;
+    sel.addEventListener('change', () => { L.tipo = sel.value; makeLightObj(L); updateLight(L); renderLightCards(); });
+    const x = document.createElement('button'); x.className = 'x'; x.type = 'button'; x.textContent = '×'; x.title = 'Remover luz'; x.setAttribute('aria-label', `Remover ${L.nome}`);
+    x.addEventListener('click', () => removeLight(L));
+    head.append(col, nm, sel, x); card.append(head);
+    card.append(rangeEl(L, 'int', 'Intensidade', 0, 8, .05, v => v.toFixed(2).replace('.', ',')));
+    card.append(rangeEl(L, 'az', 'Ângulo horizontal', -180, 180, 1, v => v + '°'));
+    card.append(rangeEl(L, 'el', 'Altura', -20, 90, 1, v => v + '°'));
+    if (L.tipo !== 'sol') card.append(rangeEl(L, 'dist', 'Distância', 1.5, 10, .1, v => v.toFixed(1).replace('.', ',') + ' m'));
+    const sh = document.createElement('label'); sh.className = 'check';
+    sh.innerHTML = `<input type="checkbox" id="l${L.id}-sombra"> Projeta sombra`;
+    const cb = sh.querySelector('input'); cb.checked = !!L.sombra;
+    cb.addEventListener('change', () => { L.sombra = cb.checked; updateLight(L); });
+    card.append(sh); box.append(card);
+  });
+  $('addLight').disabled = lights.length >= 6;
+}
+for (const k in RIGS) {
+  const c = document.createElement('button'); c.className = 'chip'; c.type = 'button'; c.dataset.k = k; c.textContent = RIGS[k].nome;
+  c.onclick = () => applyRig(k); $('rigs').append(c);
+}
+$('addLight').onclick = () => {
+  if (lights.length >= 6) return;
+  addLight({nome:`Ponto de luz ${lights.length + 1}`, tipo:'ponto', cor:'#ffffff', int:1.2, az:Math.round(Math.random()*300 - 150), el:30, dist:3.5, sombra:false});
+  renderLightCards();
+  $('rigs').querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', 'false'));
+};
+
+/* ================= Tamanhos e desenho ================= */
+function setSizes(w, h, pr){
+  renderer.setPixelRatio(pr); renderer.setSize(w, h, false);
+  composer.setPixelRatio(pr); composer.setSize(w, h);
+  bokeh.renderTargetDepth.setSize(Math.round(w*pr), Math.round(h*pr));
+  grade.uniforms.uRes.value.set(w*pr, h*pr);
+  camera.aspect = w/h; camera.updateProjectionMatrix();
+}
+function fit(){ setSizes(Math.max(1, stage.clientWidth), Math.max(1, stage.clientHeight), Math.min(window.devicePixelRatio || 1, 1.5)); }
+const mv = new THREE.Matrix4();
+function draw(){
+  renderPass.enabled = !st.ao; ssao.enabled = st.ao;
+  bokeh.enabled = st.dof && !(st.exporting && st.transparent);
+  bloom.enabled = bloom.strength > 0.001;
+  camera.updateMatrixWorld(); pivot.updateMatrixWorld(true);
+  if (model) { mv.multiplyMatrices(camera.matrixWorldInverse, model.matrixWorld); pbrMat.userData.u.uNM.value.getNormalMatrix(mv); }
+  bokeh.uniforms.focus.value = camera.position.distanceTo(controls.target);
+  bokeh.uniforms.aperture.value = st.dofA*0.012; bokeh.uniforms.maxblur.value = .006 + st.dofA*.012;
+  composer.render();
+}
+function frameView(az){
+  const h = st.height, tgt = new THREE.Vector3(0, h*0.5, 0);
+  const fov = camera.fov*Math.PI/180;
+  const dist = (h*0.62)/Math.tan(fov/2)/Math.min(1, camera.aspect*1.1) + 0.3;
+  const a = (az ?? 30)*Math.PI/180, pol = 82*Math.PI/180;
+  camera.position.set(Math.sin(a)*Math.sin(pol)*dist, tgt.y + Math.cos(pol)*dist, Math.cos(a)*Math.sin(pol)*dist);
+  controls.target.copy(tgt); controls.update();
+}
+
+/* ================= Malha ================= */
+function weld(geo){
+  const pa = geo.attributes.position.array, n = pa.length/3;
+  const ca = geo.attributes.color ? geo.attributes.color.array : null, cs = geo.attributes.color ? geo.attributes.color.itemSize : 3;
+  geo.computeBoundingBox(); const bb = geo.boundingBox;
+  const diag = bb.max.distanceTo(bb.min) || 1, q = 1/(diag*1e-6);
+  let cap = 1; while (cap < n*2) cap <<= 1; const mask = cap - 1;
+  const table = new Int32Array(cap).fill(-1);
+  const qx = new Int32Array(n), qy = new Int32Array(n), qz = new Int32Array(n);
+  const pos = new Float32Array(n*3), col = ca ? new Float32Array(n*3) : null, idx = new Uint32Array(n);
+  let u = 0;
+  for (let i = 0; i < n; i++) {
+    const x = Math.round(pa[i*3]*q), y = Math.round(pa[i*3+1]*q), z = Math.round(pa[i*3+2]*q);
+    let hsh = (Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(z, 83492791)) & mask;
+    let found = -1;
+    while (table[hsh] !== -1) { const k = table[hsh]; if (qx[k] === x && qy[k] === y && qz[k] === z) { found = k; break; } hsh = (hsh + 1) & mask; }
+    if (found < 0) {
+      found = u++; table[hsh] = found; qx[found] = x; qy[found] = y; qz[found] = z;
+      pos[found*3] = pa[i*3]; pos[found*3+1] = pa[i*3+1]; pos[found*3+2] = pa[i*3+2];
+      if (ca) { col[found*3] = ca[i*cs]; col[found*3+1] = ca[i*cs+1]; col[found*3+2] = ca[i*cs+2]; }
+    }
+    idx[i] = found;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos.slice(0, u*3), 3));
+  if (ca) g.setAttribute('color', new THREE.BufferAttribute(col.slice(0, u*3), 3));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  g.computeVertexNormals();
+  return g;
+}
+function prepGeometry(geo){
+  const g = geo.index ? geo : weld(geo);
+  if (g === geo) { if (geo.attributes.normal) geo.deleteAttribute('normal'); geo.computeVertexNormals(); }
+  const c = g.attributes.color;
+  if (c) { const a = c.array; for (let i = 0; i < a.length; i++) { let v = a[i]; if (v > 1) v /= 255; a[i] = v <= .04045 ? v/12.92 : Math.pow((v + .055)/1.055, 2.4); } c.needsUpdate = true; }
+  return g;
+}
+function currentMat(){ return st.mode === 'pbr' ? pbrMat : matcapMat; }
+function setModel(obj, name, isSample){
+  if (model) { pivot.remove(model); model.traverse(o => { if (o.isMesh) o.geometry.dispose(); }); }
+  model = obj; let tris = 0, verts = 0; st.hasColor = false;
+  obj.traverse(o => {
+    if (!o.isMesh) return;
+    o.material = currentMat(); o.castShadow = true; o.receiveShadow = true;
+    const g = o.geometry; tris += (g.index ? g.index.count : g.attributes.position.count)/3; verts += g.attributes.position.count;
+    if (g.attributes.color) st.hasColor = true;
+  });
+  const box = new THREE.Box3().setFromObject(obj), size = box.getSize(new THREE.Vector3());
+  const s = 2/Math.max(size.x, size.y, size.z);
+  obj.scale.multiplyScalar(s);
+  const b2 = new THREE.Box3().setFromObject(obj), c2 = b2.getCenter(new THREE.Vector3());
+  obj.position.x -= c2.x; obj.position.z -= c2.z; obj.position.y -= b2.min.y;
+  st.height = b2.max.y - b2.min.y;
+  pbrMat.userData.u.uObjScale.value = obj.scale.x;
+  center.position.set(0, st.height*0.5, 0);
+  pivot.rotation.y = 0; pivot.add(obj);
+  lights.forEach(updateLight);
+  const fn = $('fileName'); fn.textContent = name;
+  if (isSample) { const t = document.createElement('span'); t.className = 'sample-tag'; t.textContent = 'exemplo'; fn.append(' ', t); }
+  st.name = name;
+  $('stats').textContent = `${nf.format(Math.round(tris))} triângulos · ${nf.format(verts)} vértices`;
+  $('ppWrap').hidden = !st.hasColor; $('pp').checked = st.hasColor; applyPolypaint();
+  frameView(30);
+}
+function applyPolypaint(){
+  const on = st.hasColor && $('pp').checked;
+  [pbrMat, matcapMat].forEach(m => { if (m.vertexColors !== on) { m.vertexColors = on; m.needsUpdate = true; } });
+}
+
+/* ---------- Escultura de exemplo ---------- */
+function sampleSculpture(){
+  const sn = new THREE.SimplexNoise({random: (() => { let s = 7; return () => (s = (s*16807) % 2147483647)/2147483647; })()});
+  let g = new THREE.IcosahedronGeometry(1, 72); g.deleteAttribute('normal'); g.deleteAttribute('uv');
+  g = weld(g); const p = g.attributes.position, v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).normalize();
+    let f = 0, amp = .6, fr = 1.1;
+    for (let o = 0; o < 3; o++) { f += sn.noise3d(v.x*fr + 3, v.y*fr, v.z*fr)*amp; amp *= .4; fr *= 2.0; }
+    const ridge = 1 - Math.abs(sn.noise3d(v.x*1.8, v.y*1.8 + 9, v.z*1.8));
+    const folds = Math.sin(v.y*7 + sn.noise3d(v.x*1.2, v.y*1.2, v.z*1.2)*2.5)*.012;
+    const r = 1 + f*.13 + Math.pow(ridge, 8)*.06 + folds;
+    p.setXYZ(i, v.x*r*.78, v.y*r*1.18, v.z*r*.82);
+  }
+  g.computeVertexNormals();
+  const head = new THREE.Mesh(g); head.position.y = 2.05;
+  const ped = new THREE.Mesh(new THREE.CylinderGeometry(.5, .6, .55, 128, 1)); ped.position.y = .275;
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(.22, .34, .35, 96, 1)); neck.position.y = .65;
+  const grp = new THREE.Group(); grp.add(ped, neck, head); return grp;
+}
+
+/* ================= Abrir arquivos ================= */
+const busy = (on, msg, sub) => { $('busy').hidden = !on; if (msg) $('busyMsg').textContent = msg; $('busySub').textContent = sub || ''; };
+const tick = () => new Promise(r => setTimeout(r, 40));
+async function openFile(file){
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['obj', 'ply', 'stl'].includes(ext)) { status(`O formato .${ext} não é aceito. Exporte do ZBrush em OBJ, PLY ou STL.`, 'warn'); return; }
+  const mb = (file.size/1048576).toFixed(1).replace('.', ',');
+  busy(true, 'Lendo arquivo…', `${file.name} · ${mb} MB`); await tick();
+  try {
+    let obj;
+    if (ext === 'obj') {
+      const txt = await file.text(); busy(true, 'Interpretando OBJ…', `${mb} MB`); await tick();
+      obj = new THREE.OBJLoader().parse(txt);
+      busy(true, 'Suavizando a malha…'); await tick();
+      obj.traverse(o => { if (o.isMesh) { const g = o.geometry; if (g.attributes.normal) g.deleteAttribute('normal'); if (g.attributes.uv) g.deleteAttribute('uv'); o.geometry = prepGeometry(g); if (g !== o.geometry) g.dispose(); } });
+    } else {
+      const buf = await file.arrayBuffer(); busy(true, `Interpretando ${ext.toUpperCase()}…`); await tick();
+      const g = ext === 'ply' ? new THREE.PLYLoader().parse(buf) : new THREE.STLLoader().parse(buf);
+      busy(true, 'Suavizando a malha…'); await tick();
+      if (g.attributes.uv) g.deleteAttribute('uv');
+      const g2 = prepGeometry(g); if (g2 !== g) g.dispose();
+      obj = new THREE.Mesh(g2);
+    }
+    setModel(obj, file.name.replace(/\.[^.]+$/, ''), false);
+    status(`${file.name} aberto.`, 'ok');
+  } catch (e) {
+    console.error(e); status(`Não consegui ler ${file.name}. Se a malha for muito pesada, exporte em PLY binário ou reduza com o Decimation Master.`, 'warn');
+  } finally { busy(false); }
+}
+$('openBtn').onclick = () => $('fileInput').click();
+$('fileInput').onchange = e => { const f = e.target.files[0]; if (f) openFile(f); e.target.value = ''; };
+let dragDepth = 0;
+stage.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; $('drop').hidden = false; });
+stage.addEventListener('dragover', e => e.preventDefault());
+stage.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('drop').hidden = true; } });
+stage.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('drop').hidden = true; const f = e.dataTransfer.files[0]; if (f) openFile(f); });
+
+/* ================= Controles: material ================= */
+function status(msg, kind){ const s = $('status'); s.textContent = msg; s.className = 'status' + (kind ? ' ' + kind : ''); }
+const bind = (id, fmt, fn) => { const el = $(id), out = $(id + 'v'); const up = () => { out.textContent = fmt(+el.value); fn(+el.value); }; el.addEventListener('input', up); return up; };
+const pct = v => Math.round(v*100) + '%';
+const MATCTL = [
+  ['mRough', pct, v => pbrMat.roughness = v],
+  ['mMetal', pct, v => pbrMat.metalness = v],
+  ['mCoat', pct, v => pbrMat.clearcoat = v],
+  ['mBump', pct, v => pbrMat.userData.u.uBump.value = v],
+  ['mVar', pct, v => pbrMat.userData.u.uVar.value = v],
+  ['mFreq', v => v < .33 ? 'grosso' : v < .66 ? 'médio' : 'fino', v => pbrMat.userData.u.uFreq.value = freqOf(v)],
+].map(([id, f, fn]) => ({id, up: bind(id, f, fn)}));
+$('mColor').addEventListener('input', e => pbrMat.color.copy(lin(e.target.value)));
+function pickPbr(id){
+  const p = PBR.find(x => x.id === id); st.mat = id; setMode('pbr');
+  $('mColor').value = p.color; pbrMat.color.copy(lin(p.color));
+  const vals = {mRough:p.rough, mMetal:p.metal, mCoat:p.coat, mBump:p.bump, mVar:p.vari, mFreq:p.freq};
+  MATCTL.forEach(c => { $(c.id).value = vals[c.id]; c.up(); });
+  $('swPbr').querySelectorAll('.sw').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === id)));
+  $('swMatcap').querySelectorAll('.sw').forEach(b => b.setAttribute('aria-pressed', 'false'));
+}
+function pickMatcap(id){
+  st.matcap = id; matcapMat.matcap = matcapTex[id]; matcapMat.needsUpdate = true; setMode('matcap');
+  $('swMatcap').querySelectorAll('.sw').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === id)));
+  $('swPbr').querySelectorAll('.sw').forEach(b => b.setAttribute('aria-pressed', 'false'));
+}
+function setMode(m){
+  st.mode = m;
+  $('matMode').querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.mode === m)));
+  $('swPbr').hidden = m !== 'pbr'; $('swMatcap').hidden = m !== 'matcap'; $('matAdjust').hidden = m !== 'pbr';
+  grade.uniforms.uACES.value = m === 'pbr' ? 1 : 0;
+  if (model) model.traverse(o => { if (o.isMesh) o.material = currentMat(); });
+}
+$('matMode').addEventListener('click', e => { const c = e.target.closest('.chip'); if (!c) return; if (c.dataset.mode === 'pbr') pickPbr(st.mat); else pickMatcap(st.matcap); });
+$('swPbr').addEventListener('click', e => { const b = e.target.closest('.sw'); if (b) pickPbr(b.dataset.id); });
+$('swMatcap').addEventListener('click', e => { const b = e.target.closest('.sw'); if (b) pickMatcap(b.dataset.id); });
+$('pp').onchange = applyPolypaint;
+
+function swatchBtn(id, nome, src){
+  const b = document.createElement('button'); b.className = 'sw'; b.type = 'button'; b.dataset.id = id; b.setAttribute('aria-pressed', 'false');
+  const im = new Image(); im.alt = ''; im.src = src; b.append(im, document.createTextNode(nome)); return b;
+}
+for (const m of MATCAPS) {
+  const cv = makeMatcap(m, 256); const tex = new THREE.CanvasTexture(cv); tex.encoding = THREE.sRGBEncoding; matcapTex[m.id] = tex;
+  $('swMatcap').append(swatchBtn(m.id, m.nome, cv.toDataURL('image/png')));
+}
+(function pbrThumbs(){
+  const S = 120, urls = {};
+  let tr = null;
+  try { tr = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true}); } catch (e) { tr = null; }
+  if (tr) {
+    tr.setSize(S, S); tr.outputEncoding = THREE.sRGBEncoding; tr.toneMapping = THREE.ACESFilmicToneMapping;
+    const pm = new THREE.PMREMGenerator(tr); const env = pm.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
+    const sc = new THREE.Scene(); sc.environment = env; sc.background = new THREE.Color(0x221f1a);
+    const cam = new THREE.PerspectiveCamera(30, 1, .1, 10); cam.position.set(0, 0, 4.1);
+    const k = new THREE.DirectionalLight(0xfff1df, 2.4); k.position.set(-2, 2.5, 2.5); sc.add(k);
+    const r = new THREE.DirectionalLight(0xffffff, 1.6); r.position.set(1.5, 1, -3); sc.add(r);
+    const geo = new THREE.SphereGeometry(1, 64, 48); const mesh = new THREE.Mesh(geo); sc.add(mesh);
+    cam.updateMatrixWorld(); mesh.updateMatrixWorld();
+    for (const p of PBR) {
+      const m = makePbr(p); m.envMapIntensity = .6; m.userData.u.uObjScale.value = 1.6;
+      mv.multiplyMatrices(cam.matrixWorldInverse, mesh.matrixWorld); m.userData.u.uNM.value.getNormalMatrix(mv);
+      mesh.material = m; tr.render(sc, cam); urls[p.id] = tr.domElement.toDataURL('image/png'); m.dispose();
+    }
+    geo.dispose(); env.dispose(); pm.dispose(); tr.dispose(); try { tr.forceContextLoss(); } catch (e) {}
+  }
+  const groups = [...new Set(PBR.map(p => p.g))];
+  for (const gname of groups) {
+    const h = document.createElement('div'); h.className = 'sub'; h.textContent = gname;
+    const grid = document.createElement('div'); grid.className = 'swatches';
+    for (const p of PBR.filter(x => x.g === gname)) {
+      let src = urls[p.id];
+      if (!src) { const c = document.createElement('canvas'); c.width = c.height = 8; const x = c.getContext('2d'); x.fillStyle = p.color; x.fillRect(0, 0, 8, 8); src = c.toDataURL(); }
+      grid.append(swatchBtn(p.id, p.nome, src));
+    }
+    $('swPbr').append(h, grid);
+  }
+})();
+
+/* ================= Controles: luz, acabamento, chão, câmera ================= */
+bind('rigRot', v => v + '°', v => { st.rigRot = v; lights.forEach(updateLight); })();
+bind('envI', pct, v => { pbrMat.envMapIntensity = v; })();
+$('showL').onchange = e => { st.showL = e.target.checked; helpers.visible = st.showL; };
+
+const G = grade.uniforms;
+const LOOKS = {
+  natural:{nome:'Natural', exp:1.05, con:1.04, sat:1, warm:0, bloom:.15, vig:.3, grain:.2},
+  estudio:{nome:'Estúdio', exp:1.15, con:1.0, sat:.95, warm:-.1, bloom:.1, vig:.2, grain:.12},
+  museu:{nome:'Museu', exp:.95, con:1.12, sat:.9, warm:.45, bloom:.22, vig:.5, grain:.3},
+  drama:{nome:'Dramático', exp:.9, con:1.25, sat:.82, warm:.15, bloom:.3, vig:.68, grain:.42},
+  pb:{nome:'P&B', exp:1.05, con:1.18, sat:0, warm:0, bloom:.12, vig:.45, grain:.5},
+};
+const signed = v => (v > 0 ? '+' : '') + Math.round(v*100);
+const FCTL = {
+  fExp: bind('fExp', v => v.toFixed(2).replace('.', ',') + '×', v => G.uExp.value = v),
+  fCon: bind('fCon', pct, v => G.uCon.value = v),
+  fSat: bind('fSat', pct, v => G.uSat.value = v),
+  fWarm: bind('fWarm', signed, v => G.uWarm.value = v),
+  fBloom: bind('fBloom', pct, v => bloom.strength = v*1.2),
+  fVig: bind('fVig', pct, v => G.uVig.value = v),
+  fGrain: bind('fGrain', pct, v => G.uGrain.value = v),
+};
+function applyLook(k){
+  const L = LOOKS[k], map = {fExp:L.exp, fCon:L.con, fSat:L.sat, fWarm:L.warm, fBloom:L.bloom, fVig:L.vig, fGrain:L.grain};
+  for (const id in map) { $(id).value = map[id]; FCTL[id](); }
+  $('looks').querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.k === k)));
+}
+for (const k in LOOKS) { const c = document.createElement('button'); c.className = 'chip'; c.type = 'button'; c.dataset.k = k; c.textContent = LOOKS[k].nome; c.onclick = () => applyLook(k); $('looks').append(c); }
+Object.keys(FCTL).forEach(id => $(id).addEventListener('input', () => $('looks').querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', 'false'))));
+
+bind('aoR', v => Math.round(v/.4*100) + '%', v => { ssao.kernelRadius = v; ssao.maxDistance = .004 + v*.06; })();
+$('aoOn').onchange = e => { st.ao = e.target.checked; $('aoR').disabled = !st.ao; };
+bind('dofA', pct, v => { st.dofA = v; })();
+$('dofOn').onchange = e => { st.dof = e.target.checked; $('dofA').disabled = !st.dof; };
+$('dofA').disabled = true;
+bind('shA', pct, v => { ground.material.opacity = v; })();
+$('shOn').onchange = e => { st.sh = e.target.checked; ground.visible = st.sh; $('shA').disabled = !st.sh; };
+bind('fov', v => Math.round(12/Math.tan(v*Math.PI/360)) + ' mm', v => { camera.fov = v; camera.updateProjectionMatrix(); })();
+$('spin').onchange = e => { st.spin = e.target.checked; };
+$('views').addEventListener('click', e => { const b = e.target.closest('.chip'); if (b) frameView(+b.dataset.az); });
+
+const BGS = [
+  {nome:'Estúdio', t:'#3b3a37', b:'#111111'},
+  {nome:'Grafite', t:'#5a5b5f', b:'#26272a'},
+  {nome:'Galeria', t:'#ece9e3', b:'#c6c0b5'},
+  {nome:'Areia', t:'#d6c4a6', b:'#8f7859'},
+  {nome:'Noite', t:'#1d2430', b:'#06080b'},
+];
+function setBg(t, b){
+  st.bgTop = t; st.bgBot = b; $('bgTop').value = t; $('bgBot').value = b;
+  const x = bgCanvas.getContext('2d'), g = x.createLinearGradient(0, 0, 0, bgCanvas.height);
+  g.addColorStop(0, t); g.addColorStop(1, b); x.fillStyle = g; x.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+  bgTex.needsUpdate = true;
+  $('bgPresets').querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.t === t && c.dataset.b === b)));
+}
+for (const p of BGS) {
+  const c = document.createElement('button'); c.className = 'chip bgchip'; c.type = 'button'; c.dataset.t = p.t; c.dataset.b = p.b;
+  const dotEl = document.createElement('i'); dotEl.style.background = `linear-gradient(${p.t},${p.b})`;
+  c.append(dotEl, document.createTextNode(p.nome)); c.onclick = () => setBg(p.t, p.b); $('bgPresets').append(c);
+}
+$('bgTop').oninput = e => setBg(e.target.value, st.bgBot);
+$('bgBot').oninput = e => setBg(st.bgTop, e.target.value);
+
+/* ================= Exportar ================= */
+let downloads = null;
+(async () => {
+  try { downloads = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch (e) { downloads = null; }
+  if (!downloads) status('Salvar arquivos não está disponível nesta visualização. Abra a página no claude.ai.', 'warn');
+})();
+async function saveFile(filename, data){
+  if (!downloads) { status('Salvar arquivos não está disponível nesta visualização.', 'warn'); return; }
+  try { await downloads.save({filename, data}); status(`${filename} salvo.`, 'ok'); }
+  catch (e) {
+    const msgs = {declined:'Salvamento cancelado.', rate_limited:'Já há um pedido de salvamento aberto. Responda a ele e tente de novo.', too_large:'Arquivo grande demais. Escolha um formato menor.'};
+    status(msgs[e && e.code] || 'Não foi possível salvar o arquivo aqui.', 'warn');
+  }
+}
+const slug = () => (st.name || 'render').trim().replace(/\s+/g, '-').toLowerCase();
+function parseSize(v){ return v === 'screen' ? [Math.round(stage.clientWidth*2), Math.round(stage.clientHeight*2)] : v.split('x').map(Number); }
+function beginExport(transparent){ st.exporting = true; st.transparent = transparent; helpers.visible = false; if (transparent) scene.background = null; }
+function endExport(){ st.exporting = false; st.transparent = false; scene.background = bgTex; helpers.visible = st.showL; fit(); }
+
+$('pngBtn').onclick = () => {
+  let [W, H] = parseSize($('fmt').value);
+  const lim = Math.min(maxTex, 8192), fitS = Math.min(1, lim/Math.max(W, H)); W = Math.round(W*fitS); H = Math.round(H*fitS);
+  const ss = Math.max(W, H)*2 <= lim && Math.max(W, H) <= 2200 ? 2 : 1;
+  const transp = $('transp').checked;
+  status('Renderizando…');
+  requestAnimationFrame(() => {
+    beginExport(transp);
+    setSizes(W*ss, H*ss, 1); controls.update(); G.uTime.value = .37; draw();
+    const out = document.createElement('canvas'); out.width = W; out.height = H; const ctx = out.getContext('2d');
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(canvas, 0, 0, W, H);
+    endExport(); draw();
+    out.toBlob(b => { if (b) saveFile(`lume-${slug()}-${W}x${H}.png`, b); else status('Falha ao gerar a imagem.', 'warn'); }, 'image/png');
+  });
+};
+
+$('vidBtn').onclick = () => {
+  if (st.recording) return;
+  if (!window.MediaRecorder) { status('Este navegador não grava vídeo. Use o Chrome ou o Safari atualizados.', 'warn'); return; }
+  const types = ['video/mp4;codecs=avc1.640028', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
+  const mime = types.find(t => MediaRecorder.isTypeSupported(t)); if (!mime) { status('Nenhum formato de vídeo disponível neste navegador.', 'warn'); return; }
+  const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+  const [W, H] = $('vres').value.split('x').map(Number), dur = +$('dur').value;
+  const rec = document.createElement('canvas'); rec.width = W; rec.height = H; const rctx = rec.getContext('2d');
+  const mr = new MediaRecorder(rec.captureStream(30), {mimeType: mime, videoBitsPerSecond: 16e6});
+  const chunks = []; mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  st.recording = true; $('vidBtn').disabled = $('pngBtn').disabled = true;
+  busy(true, 'Gravando giro 360°…', `${dur} s · ${W}×${H} · ${ext.toUpperCase()}`);
+  const base = pivot.rotation.y; let t0 = null;
+  beginExport(false);
+  mr.onstop = () => {
+    st.recording = false; $('vidBtn').disabled = $('pngBtn').disabled = false; busy(false);
+    pivot.rotation.y = base; endExport();
+    saveFile(`lume-giro-${slug()}-${W}x${H}.${ext}`, new Blob(chunks, {type: mime}));
+  };
+  mr.start(250);
+  const step = now => {
+    if (t0 === null) t0 = now;
+    const t = Math.min(1, (now - t0)/(dur*1000));
+    pivot.rotation.y = base + t*Math.PI*2;
+    setSizes(W, H, 1); controls.update(); G.uTime.value = now/1000; draw();
+    rctx.drawImage(canvas, 0, 0, W, H);
+    $('busySub').textContent = `${Math.round(t*100)}% · ${W}×${H} · ${ext.toUpperCase()}`;
+    if (t < 1) requestAnimationFrame(step); else setTimeout(() => mr.stop(), 120);
+  };
+  requestAnimationFrame(step);
+};
+
+/* ================= Início ================= */
+new ResizeObserver(() => { if (!st.recording && !st.exporting) fit(); }).observe(stage);
+fit(); setBg(BGS[0].t, BGS[0].b);
+applyRig('tres');
+setModel(sampleSculpture(), 'Estudo orgânico', true);
+pickPbr('bronze'); applyLook('natural');
+let last = performance.now();
+(function loop(now){
+  requestAnimationFrame(loop);
+  if (st.recording) return;
+  const dt = Math.min(.05, (now - last)/1000); last = now;
+  if (st.spin) pivot.rotation.y += dt*0.5;
+  G.uTime.value = now/1000;
+  controls.update(); draw();
+})(last);
+})();
+</script>
