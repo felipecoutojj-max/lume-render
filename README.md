@@ -12,7 +12,7 @@ Render realista de esculturas feitas no ZBrush (OBJ, PLY, STL), feito para o iPa
 As esculturas são abertas direto do iPad e não são enviadas para nenhum servidor.
 
 ## Versões
-- `index.html`: versão atual (v3, iPad instalável)
-- `versoes/`: versões anteriores (Mac v2, iPad v1)
+- `index.html`: versão atual (v4, estilo pronto "Escultura noir")
+- `versoes/`: versões anteriores (Mac v2, iPad v1, iPad v3)
 
 Usa three.js r128 (licença MIT, em `vendor/`).

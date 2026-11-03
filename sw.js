@@ -1,5 +1,5 @@
 /* Lume Render: guarda o app no iPad para abrir sem internet. */
-const VERSION = 'lume-v3';
+const VERSION = 'lume-v4';
 const FILES = [
   './', './index.html', './manifest.webmanifest', './vendor/three-r128-bundle.js',
   './icons/apple-touch-icon.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png',

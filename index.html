@@ -215,6 +215,9 @@ select{background:var(--ground);border:1px solid var(--line);border-radius:10px;
     <div class="scroll">
 
       <div class="pane" data-pane="material">
+        <div class="sub">Estilos prontos</div>
+        <div class="chips" id="styles"></div>
+        <div class="sub">Material</div>
         <div class="chips" id="matMode">
           <button class="chip" data-mode="pbr" aria-pressed="true">Realista</button>
           <button class="chip" data-mode="matcap" aria-pressed="false">Estilo ZBrush</button>
@@ -283,6 +286,7 @@ select{background:var(--ground);border:1px solid var(--line);border-radius:10px;
           <button class="chip" data-az="35">Três quartos</button>
           <button class="chip" data-az="90">Perfil</button>
           <button class="chip" data-az="180">Costas</button>
+          <button class="chip" data-az="25" data-pol="99">De baixo (heroico)</button>
         </div>
         <div class="rng"><div class="row"><label for="fov">Lente</label><span class="val" id="fovv"></span></div><input type="range" id="fov" min="8" max="60" step="1" value="24"></div>
         <label class="check"><input type="checkbox" id="spin"> Girar no pedestal</label>
@@ -388,6 +392,7 @@ const PBR = [
   {g:'Moldagem', id:'ceramica', nome:'Porcelana', color:'#f4f2ec', rough:.3, metal:0, coat:1, bump:.02, vari:.02, freq:.5},
   {g:'Moldagem', id:'esmalte', nome:'Cerâmica azul', color:'#2d5a8a', rough:.28, metal:0, coat:1, bump:.06, vari:.35, freq:.3},
   {g:'Moldagem', id:'cera', nome:'Cera de abelha', color:'#d9a441', rough:.45, metal:0, coat:.3, bump:.1, vari:.25, freq:.4},
+  {g:'Moldagem', id:'grafite', nome:'Cinza escultura', color:'#8b8b8d', rough:.36, metal:0, coat:.35, bump:.03, vari:.03, freq:.6},
   {g:'Moldagem', id:'resina', nome:'Resina 3D', color:'#9a9ca0', rough:.42, metal:0, coat:.25, bump:.06, vari:.03, freq:.8},
   {g:'Moldagem', id:'vinil', nome:'Vinil (toy)', color:'#e8e3d8', rough:.48, metal:0, coat:.15, bump:.02, vari:.02, freq:.5},
   {g:'Moldagem', id:'vinilP', nome:'Vinil preto', color:'#1e1e20', rough:.38, metal:0, coat:.3, bump:.02, vari:.02, freq:.5},
@@ -542,6 +547,10 @@ const RIGS = {
     {nome:'Contraluz quente', tipo:'sol', cor:'#ffcf96', int:4.2, az:150, el:26, dist:5, sombra:true},
     {nome:'Contraluz fria', tipo:'sol', cor:'#9fc2ff', int:2.8, az:-155, el:24, dist:5, sombra:false}]},
 };
+RIGS.noir = {nome:'Noir', env:.16, L:[
+  {nome:'Recorte principal', tipo:'sol', cor:'#ffffff', int:2.3, az:128, el:46, dist:5, sombra:true},
+  {nome:'Recorte do outro lado', tipo:'sol', cor:'#f2f4ff', int:.75, az:-138, el:34, dist:5, sombra:false},
+  {nome:'Topo suave', tipo:'spot', cor:'#ffffff', int:1.1, az:-25, el:72, dist:5, sombra:false}]};
 const TIPOS = {sol:'Sol', ponto:'Ponto', spot:'Spot'};
 function makeLightObj(L){
   if (L.obj) { scene.remove(L.obj); L.obj.dispose && L.obj.dispose(); }
@@ -711,12 +720,12 @@ function draw(){
   bokeh.uniforms.aperture.value = st.dofA*0.012; bokeh.uniforms.maxblur.value = .006 + st.dofA*.012;
   composer.render();
 }
-function frameView(az){
+function frameView(az, polDeg){
   const h = st.height, tgt = new THREE.Vector3(0, h*0.5, 0);
   const H = stage.clientHeight, f = freeArea();
   const fov = camera.fov*Math.PI/180;
   const dist = (h*0.74)/Math.tan(fov/2)*(H/f.fh)/Math.min(1, (f.fw/f.fh)*1.1) + 0.3;
-  const a = (az ?? 30)*Math.PI/180, pol = 82*Math.PI/180;
+  const a = (az ?? 30)*Math.PI/180, pol = (polDeg ?? st.pol ?? 82)*Math.PI/180; st.pol = polDeg ?? st.pol ?? 82;
   camera.position.set(Math.sin(a)*Math.sin(pol)*dist, tgt.y + Math.cos(pol)*dist, Math.cos(a)*Math.sin(pol)*dist);
   controls.target.copy(tgt); controls.update(); placeDots(); D();
 }
@@ -972,6 +981,7 @@ const LOOKS = {
   estudio:{nome:'Estúdio', exp:1.15, con:1.0, sat:.95, warm:-.1, bloom:.1, vig:.2, grain:.12},
   museu:{nome:'Museu', exp:.95, con:1.12, sat:.9, warm:.45, bloom:.22, vig:.5, grain:.3},
   drama:{nome:'Dramático', exp:.9, con:1.25, sat:.82, warm:.15, bloom:.3, vig:.68, grain:.42},
+  noir:{nome:'Noir', exp:.95, con:1.2, sat:0, warm:0, bloom:.18, vig:.78, grain:.3},
   pb:{nome:'P&B', exp:1.05, con:1.18, sat:0, warm:0, bloom:.12, vig:.45, grain:.5},
 };
 const signed = v => (v > 0 ? '+' : '') + Math.round(v*100);
@@ -1002,7 +1012,7 @@ $('shOn').onchange = e => { st.sh = e.target.checked; ground.visible = st.sh; $(
 bind('fov', v => Math.round(12/Math.tan(v*Math.PI/360)) + ' mm', v => { camera.fov = v; camera.updateProjectionMatrix(); })();
 $('spin').onchange = e => { st.spin = e.target.checked; };
 $('fastOn').onchange = e => { st.fast = e.target.checked; };
-$('views').addEventListener('click', e => { const b = e.target.closest('.chip'); if (b) frameView(+b.dataset.az); });
+$('views').addEventListener('click', e => { const b = e.target.closest('.chip'); if (b) frameView(+b.dataset.az, b.dataset.pol ? +b.dataset.pol : 82); });
 function setQuality(q){
   st.quality = q; try { localStorage.setItem('lume-q', String(q)); } catch (e) {}
   $('quality').querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(+c.dataset.q === q)));
@@ -1016,6 +1026,7 @@ const BGS = [
   {nome:'Galeria', t:'#ece9e3', b:'#c6c0b5'},
   {nome:'Areia', t:'#d6c4a6', b:'#8f7859'},
   {nome:'Noite', t:'#1d2430', b:'#06080b'},
+  {nome:'Preto', t:'#0b0b0b', b:'#000000'},
 ];
 function setBg(t, b){
   st.bgTop = t; st.bgBot = b; $('bgTop').value = t; $('bgBot').value = b;
@@ -1031,6 +1042,24 @@ for (const p of BGS) {
 }
 $('bgTop').oninput = e => setBg(e.target.value, st.bgBot);
 $('bgBot').oninput = e => setBg(st.bgTop, e.target.value);
+
+/* ---------- estilos prontos: material + luz + filtro + fundo + câmera de uma vez ---------- */
+const STYLES = {
+  noir: {nome:'Escultura noir', desc:'cinza acetinado, recorte de luz no fundo preto, P&B com vinheta', go(){
+    pickPbr('grafite'); applyRig('noir'); applyLook('noir'); setBg('#0b0b0b', '#000000');
+    $('aoOn').checked = true; $('aoOn').dispatchEvent(new Event('change'));
+    $('aoR').value = .16; $('aoR').dispatchEvent(new Event('input'));
+    $('dofOn').checked = true; $('dofOn').dispatchEvent(new Event('change'));
+    $('dofA').value = .22; $('dofA').dispatchEvent(new Event('input'));
+    $('fov').value = 20; $('fov').dispatchEvent(new Event('input'));
+    frameView(25, 99);
+  }},
+};
+for (const k in STYLES) {
+  const c = document.createElement('button'); c.className = 'chip'; c.type = 'button'; c.textContent = STYLES[k].nome; c.title = STYLES[k].desc;
+  c.onclick = () => { STYLES[k].go(); $('styles').querySelectorAll('.chip').forEach(x => x.setAttribute('aria-pressed', String(x === c))); };
+  $('styles').append(c);
+}
 
 /* ================= Exportar ================= */
 let pending = null;
